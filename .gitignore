@@ -1,0 +1,14 @@
+__pycache__/
+temp_files/
+data/
+layers_data/
+.ipynb_checkpoints/
+venv/
+.env/
+*.log
+*.sqlite3
+*.csv
+new-workspace.jupyterlab-workspace
+0. Data Downloads.ipynb
+1. Additional Layers.ipynb
+
