@@ -11,4 +11,6 @@ venv/
 new-workspace.jupyterlab-workspace
 0. Data Downloads.ipynb
 1. Additional Layers.ipynb
+client_secrets.json
+model.pkl
 
