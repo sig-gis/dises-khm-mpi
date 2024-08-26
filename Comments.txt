@@ -1,3 +1,5 @@
+August 07 2024
+
 REEM:
 
 Do we need to select co-variates that we suspect will also be affected by the treatment, to be 
@@ -10,3 +12,11 @@ Consider, for example, a case where community-managed forests in high elevation 
 ROBERTO: 
 
 Sorry, my internet connection is unstable, so maybe I missed a question about the overlap of interpolation predictors and treatment mechanisms. It would definitely relate to the reviewer comment from above. The response was that the interpolation predictors should include some time-variant factors that mediate the impact of the treatment on poverty in order for our estimation to detect treatment effects when using the interpolated MPI as the outcome.
+
+---
+
+August 21 2024
+
+SAM: 
+
+We need to analyse the coefficients that come out of both the lasso covariates selections process and the Bayesian estimations. Understanding which variables are correlated with MPI and which are being used to predict it is important for evaluation purposes. 
