@@ -2,7 +2,11 @@ import numpy as np
 import pandas as pd
 
 from sklearn.preprocessing import PowerTransformer
-from scipy.stats import skew, kurtosis, boxcox
+from scipy.stats import skew, kurtosis, boxcox, yeojohnson
+
+from scipy.special import inv_boxcox
+from numpy import expm1, sqrt, square, log1p
+
 from scipy.spatial import cKDTree
 
 import rasterio
@@ -14,7 +18,6 @@ import rasterio
 from rasterio.features import shapes
 from shapely.geometry import shape, mapping
 import geopandas as gpd
-import numpy as np
 
 import geopandas as gpd
 from shapely.geometry import Point
@@ -363,7 +366,6 @@ def plot_distribution_with_statistics(y,  filepath='.'):
     
     plt.show()
 
-# Define transformation functions for target variable
 
 def log_transform(y):
     return np.log1p(y)
@@ -375,13 +377,12 @@ def square_transform(y):
     return np.square(y)
 
 def boxcox_transform(y):
-    # Box-Cox transformation requires positive data
-    y_pos = y + 1 - np.min(y)
-    return boxcox(y_pos)[0]
+    transformed_y, lmbda = boxcox(y)
+    return transformed_y, lmbda
 
 def yeojohnson_transform(y):
-    pt = PowerTransformer(method='yeo-johnson')
-    return pt.fit_transform(y.values.reshape(-1, 1)).flatten()
+    transformed_y, lmbda = yeojohnson(y)
+    return transformed_y, lmbda
 
 def select_transformation(y):
     """
@@ -399,7 +400,11 @@ def select_transformation(y):
     y (pd.Series or np.ndarray): The target variable data.
 
     Returns:
-    np.ndarray: The transformed target variable.
+    tuple: (transformed_y, transformation_name, lmbda)
+           - transformed_y (np.ndarray): The transformed target variable.
+           - transformation_name (str): The name of the applied transformation.
+           - lmbda (float or None): The lambda value used for Box-Cox or Yeo-Johnson transformations. 
+                                    None if the transformation does not require lambda.
 
     Notes:
     - If the target variable contains non-positive values, log and Box-Cox transformations are avoided.
@@ -413,7 +418,7 @@ def select_transformation(y):
 
     Example:
     y = pd.Series([1, 2, 3, 4, 5])
-    transformed_y = select_transformation(y)
+    transformed_y, transformation_name, lmbda = select_transformation(y)
     """
     skewness = skew(y)
     kurt = kurtosis(y)
@@ -423,40 +428,114 @@ def select_transformation(y):
         # If there are non-positive values, avoid log and Box-Cox transformations
         if skewness > 1:
             print("Applying Yeo-Johnson transformation due to high positive skewness and non-positive values.")
-            return yeojohnson_transform(y)
+            transformed_y, lmbda = yeojohnson_transform(y)
+            return transformed_y, 'yeo-johnson', lmbda
         elif skewness > 0.5:
             print("Applying square root transformation due to moderate positive skewness and non-positive values.")
-            return sqrt_transform(y)
+            return sqrt_transform(y), 'sqrt', None
         elif skewness < -1:
             print("Applying square transformation due to high negative skewness and non-positive values.")
-            return square_transform(y)
+            return square_transform(y), 'square', None
         elif skewness > -0.5 and skewness < 0.5:
             print("No transformation applied due to low skewness and non-positive values.")
-            return y  # No transformation
+            return y, 'none', None  # No transformation
         else:
             print("Applying Yeo-Johnson transformation due to other skewness values and non-positive values.")
-            return yeojohnson_transform(y)
+            transformed_y, lmbda = yeojohnson_transform(y)
+            return transformed_y, 'yeo-johnson', lmbda
     else:
         # If all values are positive, consider all transformations
         if skewness > 1:
             print("Applying log transformation due to high positive skewness.")
-            return log_transform(y)
+            return log_transform(y), 'log', None
         elif skewness > 0.5:
             print("Applying square root transformation due to moderate positive skewness.")
-            return sqrt_transform(y)
+            return sqrt_transform(y), 'sqrt', None
         elif skewness < -1:
             print("Applying square transformation due to high negative skewness.")
-            return square_transform(y)
+            return square_transform(y), 'square', None
         elif skewness > -0.5 and skewness < 0.5:
             print("No transformation applied due to low skewness.")
-            return y  # No transformation
+            return y, 'none', None  # No transformation
         else:
             try:
                 print("Applying Box-Cox transformation due to other skewness values.")
-                return boxcox_transform(y)
+                transformed_y, lmbda = boxcox_transform(y)
+                return transformed_y, 'box-cox', lmbda
             except ValueError:
                 print("Applying Yeo-Johnson transformation due to other skewness values and failed Box-Cox transformation.")
-                return yeojohnson_transform(y)
+                transformed_y, lmbda = yeojohnson_transform(y)
+                return transformed_y, 'yeo-johnson', lmbda
+
+def revert_standardization(y_standardized, original_mean, original_std):
+    """
+    Reverts the standardization process by applying the inverse of standardization.
+
+    Parameters:
+    y_standardized (np.ndarray): The standardized target variable.
+    original_mean (float): The mean of the original target variable before standardization.
+    original_std (float): The standard deviation of the original target variable before standardization.
+
+    Returns:
+    np.ndarray: The original target variable before standardization.
+    """
+    return y_standardized * original_std + original_mean
+
+def revert_transformation(y_transformed, transformation_name, original_mean=None, original_std=None, lmbda=None):
+    """
+    Reverts the transformation applied to the target variable based on the transformation name.
+
+    Parameters:
+    y_transformed (np.ndarray): The transformed target variable data.
+    transformation_name (str): The name of the applied transformation.
+    original_mean (float, optional): The mean of the original target variable, required if standardized.
+    original_std (float, optional): The standard deviation of the original target variable, required if standardized.
+    lmbda (float, optional): The lambda value used for the Box-Cox or Yeo-Johnson transformation, if applicable.
+
+    Returns:
+    np.ndarray: The reverted target variable, in its original form.
+
+    Raises:
+    ValueError: If the transformation name is not recognized.
+    """
+
+    if transformation_name == 'log':
+        return expm1(y_transformed)
+    elif transformation_name == 'sqrt':
+        return square(y_transformed)
+    elif transformation_name == 'square':
+        return sqrt(y_transformed)
+    elif transformation_name == 'box-cox':
+        if lmbda is None:
+            raise ValueError("Lambda value is required to revert Box-Cox transformation.")
+        return inv_boxcox(y_transformed, lmbda)
+    elif transformation_name == 'yeo-johnson':
+        if lmbda is None:
+            raise ValueError("Lambda value is required to revert Yeo-Johnson transformation.")
+        return yeojohnson_inverse(y_transformed, lmbda)
+    elif transformation_name == 'none':
+        return y_transformed
+    else:
+        raise ValueError(f"Unrecognized transformation name: {transformation_name}")
+
+def yeojohnson_inverse(y_transformed, lmbda):
+    """
+    Reverts the Yeo-Johnson transformation given the transformed data and lambda parameter.
+
+    Parameters:
+    y_transformed (np.ndarray): The Yeo-Johnson transformed data.
+    lmbda (float): The lambda value used in the Yeo-Johnson transformation.
+
+    Returns:
+    np.ndarray: The original data before Yeo-Johnson transformation.
+    """
+    if lmbda == 0:
+        return expm1(y_transformed)
+    elif lmbda > 0:
+        return np.exp(np.log1p(y_transformed * lmbda) / lmbda) - 1
+    else:
+        return -np.exp(np.log1p(-y_transformed * lmbda) / -lmbda) + 1
+
 
 def filter_columns_by_year(gdf: pd.DataFrame, year: int) -> pd.DataFrame:
     """
