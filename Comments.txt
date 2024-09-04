@@ -20,3 +20,9 @@ August 21 2024
 SAM: 
 
 We need to analyse the coefficients that come out of both the lasso covariates selections process and the Bayesian estimations. Understanding which variables are correlated with MPI and which are being used to predict it is important for evaluation purposes. 
+
+---
+
+September 03 2024
+
+Should we standardize the X_new matrix using the mean and the std from X or from X_new? In the original code it was being done with X's parameters, but that is probably wrong. 
