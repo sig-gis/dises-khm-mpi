@@ -366,6 +366,24 @@ def plot_distribution_with_statistics(y,  filepath='.'):
     
     plt.show()
 
+# Function to plot histograms in a grid with more bins
+def plot_histograms(df, bins=50):
+    num_cols = len(df.columns)
+    num_rows = (num_cols + 1) // 2  # To arrange histograms in a grid (2 columns)
+    
+    fig, axes = plt.subplots(num_rows, 2, figsize=(10, num_rows * 3))
+    axes = axes.flatten()  # Flatten the axes array to access each subplot easily
+    
+    for i, col in enumerate(df.columns):
+        axes[i].hist(df[col], bins=bins, edgecolor='black')
+        axes[i].set_title(col)
+    
+    # Remove any empty subplots
+    for j in range(i + 1, len(axes)):
+        fig.delaxes(axes[j])
+    
+    plt.tight_layout()
+    plt.show()
 
 def log_transform(y):
     return np.log1p(y)
