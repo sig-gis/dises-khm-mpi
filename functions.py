@@ -638,4 +638,19 @@ def raster_freq_table(raster_path):
     
     return frequency_table
 
+def df_to_pdf(df, file_path, title='.', show=False):
+    fig, ax = plt.subplots(figsize=(8, 4))  # Set the size of the figure
+    ax.axis('tight')
+    ax.axis('off')
+    table = ax.table(cellText=df.values, colLabels=df.columns, cellLoc='center', loc='center')
+    
+    # Save the plot as a PDF
+    plt.savefig(file_path)
+
+    if title!='.': 
+        ax.set_title(title)
+
+    if show == True: 
+        plt.show()
+
 
