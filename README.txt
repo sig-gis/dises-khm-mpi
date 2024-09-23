@@ -13,6 +13,7 @@ Notebooks structure:
 - Notebook 2 applies the covariates selection process and dimensionality reduction
 - Notebook 3 trains the Bayesian geostatistical model 
 - Notebook 4 makes predictions for unknown locations in batches
+- Notebook 5 analyses predictions and plots maps
 
 The previous process of adding layers is handled in the global-layers folder:
 
