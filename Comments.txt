@@ -1,0 +1,38 @@
+August 07 2024
+
+REEM:
+
+Do we need to select co-variates that we suspect will also be affected by the treatment, to be 
+able to pick up treatment effect?
+
+In the section on interpolation, I think it is important to mention that using data based on interpolation may be fundamentally problematic for evaluation of outcomes. Interpolation is necessarily a guess about outcomes based on other characteristics rather than a measure of them. Interpolated poverty data may be very helpful for some purposes, for example if the government is trying to target a program to areas of high poverty. In that case, using a factor like elevation to predict and interpolate where populations are likely to be sparse or disadvantaged may be very useful for effective program delivery. However, using interpolated data for impact evaluations could easily lead to actively wrong answers.
+
+Consider, for example, a case where community-managed forests in high elevation communities do lead to improved household wealth through better management and distribution of resources, so actual wealth outcomes are better at high elevation. Yet, interpolated estimates of wealth for high elevation communities might be low on average, leading researchers using this data to mistakenly conclude there is no impact of community forests or even that it is negative. Without actual measurements of well-being outcomes in high elevation areas with and without community-managed forests, the impacts of conservation interventions would be missed. I have the same concerns about the gridded datasets discussed on p. 8. Imputation based on aspects observable from space may well miss crucial positive or negative impacts of conservation interventions that are really only observable by interviewing people on the ground. This should be clearly acknowledged.
+
+ROBERTO: 
+
+Sorry, my internet connection is unstable, so maybe I missed a question about the overlap of interpolation predictors and treatment mechanisms. It would definitely relate to the reviewer comment from above. The response was that the interpolation predictors should include some time-variant factors that mediate the impact of the treatment on poverty in order for our estimation to detect treatment effects when using the interpolated MPI as the outcome.
+
+---
+
+August 21 2024
+
+SAM: 
+
+We need to analyse the coefficients that come out of both the lasso covariates selections process and the Bayesian estimations. Understanding which variables are correlated with MPI and which are being used to predict it is important for evaluation purposes. 
+
+---
+
+September 03 2024
+
+Should we standardize the X_new matrix using the mean and the std from X or from X_new? In the original code it was being done with X's parameters, but that is probably wrong. 
+
+---
+
+September 18 2024
+
+- Include difference between urban and rural. 
+- Test against 300 that were not seen
+- Predict MPI underlying indicators
+- Use nightlights 
+- Make sure we are including all the original variables used by DHS

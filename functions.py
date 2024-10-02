@@ -2,7 +2,11 @@ import numpy as np
 import pandas as pd
 
 from sklearn.preprocessing import PowerTransformer
-from scipy.stats import skew, kurtosis, boxcox
+from scipy.stats import skew, kurtosis, boxcox, yeojohnson
+
+from scipy.special import inv_boxcox
+from numpy import expm1, sqrt, square, log1p
+
 from scipy.spatial import cKDTree
 
 import rasterio
@@ -14,7 +18,6 @@ import rasterio
 from rasterio.features import shapes
 from shapely.geometry import shape, mapping
 import geopandas as gpd
-import numpy as np
 
 import geopandas as gpd
 from shapely.geometry import Point
@@ -24,6 +27,12 @@ import fiona
 from matplotlib import pyplot as plt
 import seaborn as sns
 import re
+
+from scipy.spatial.distance import pdist, squareform
+from skgstat import Variogram
+
+from sklearn.preprocessing import FunctionTransformer, PowerTransformer
+from sklearn.compose import ColumnTransformer
 
 def resample_raster(input_path, output_path, scale, resampling_method=Resampling.bilinear):
     """
@@ -363,7 +372,24 @@ def plot_distribution_with_statistics(y,  filepath='.'):
     
     plt.show()
 
-# Define transformation functions for target variable
+# Function to plot histograms in a grid with more bins
+def plot_histograms(df, bins=50):
+    num_cols = len(df.columns)
+    num_rows = (num_cols + 1) // 2  # To arrange histograms in a grid (2 columns)
+    
+    fig, axes = plt.subplots(num_rows, 2, figsize=(10, num_rows * 3))
+    axes = axes.flatten()  # Flatten the axes array to access each subplot easily
+    
+    for i, col in enumerate(df.columns):
+        axes[i].hist(df[col], bins=bins, edgecolor='black')
+        axes[i].set_title(col)
+    
+    # Remove any empty subplots
+    for j in range(i + 1, len(axes)):
+        fig.delaxes(axes[j])
+    
+    plt.tight_layout()
+    plt.show()
 
 def log_transform(y):
     return np.log1p(y)
@@ -375,13 +401,12 @@ def square_transform(y):
     return np.square(y)
 
 def boxcox_transform(y):
-    # Box-Cox transformation requires positive data
-    y_pos = y + 1 - np.min(y)
-    return boxcox(y_pos)[0]
+    transformed_y, lmbda = boxcox(y)
+    return transformed_y, lmbda
 
 def yeojohnson_transform(y):
-    pt = PowerTransformer(method='yeo-johnson')
-    return pt.fit_transform(y.values.reshape(-1, 1)).flatten()
+    transformed_y, lmbda = yeojohnson(y)
+    return transformed_y, lmbda
 
 def select_transformation(y):
     """
@@ -399,7 +424,11 @@ def select_transformation(y):
     y (pd.Series or np.ndarray): The target variable data.
 
     Returns:
-    np.ndarray: The transformed target variable.
+    tuple: (transformed_y, transformation_name, lmbda)
+           - transformed_y (np.ndarray): The transformed target variable.
+           - transformation_name (str): The name of the applied transformation.
+           - lmbda (float or None): The lambda value used for Box-Cox or Yeo-Johnson transformations. 
+                                    None if the transformation does not require lambda.
 
     Notes:
     - If the target variable contains non-positive values, log and Box-Cox transformations are avoided.
@@ -413,7 +442,7 @@ def select_transformation(y):
 
     Example:
     y = pd.Series([1, 2, 3, 4, 5])
-    transformed_y = select_transformation(y)
+    transformed_y, transformation_name, lmbda = select_transformation(y)
     """
     skewness = skew(y)
     kurt = kurtosis(y)
@@ -423,40 +452,114 @@ def select_transformation(y):
         # If there are non-positive values, avoid log and Box-Cox transformations
         if skewness > 1:
             print("Applying Yeo-Johnson transformation due to high positive skewness and non-positive values.")
-            return yeojohnson_transform(y)
+            transformed_y, lmbda = yeojohnson_transform(y)
+            return transformed_y, 'yeo-johnson', lmbda
         elif skewness > 0.5:
             print("Applying square root transformation due to moderate positive skewness and non-positive values.")
-            return sqrt_transform(y)
+            return sqrt_transform(y), 'sqrt', None
         elif skewness < -1:
             print("Applying square transformation due to high negative skewness and non-positive values.")
-            return square_transform(y)
+            return square_transform(y), 'square', None
         elif skewness > -0.5 and skewness < 0.5:
             print("No transformation applied due to low skewness and non-positive values.")
-            return y  # No transformation
+            return y, 'none', None  # No transformation
         else:
             print("Applying Yeo-Johnson transformation due to other skewness values and non-positive values.")
-            return yeojohnson_transform(y)
+            transformed_y, lmbda = yeojohnson_transform(y)
+            return transformed_y, 'yeo-johnson', lmbda
     else:
         # If all values are positive, consider all transformations
         if skewness > 1:
             print("Applying log transformation due to high positive skewness.")
-            return log_transform(y)
+            return log_transform(y), 'log', None
         elif skewness > 0.5:
             print("Applying square root transformation due to moderate positive skewness.")
-            return sqrt_transform(y)
+            return sqrt_transform(y), 'sqrt', None
         elif skewness < -1:
             print("Applying square transformation due to high negative skewness.")
-            return square_transform(y)
+            return square_transform(y), 'square', None
         elif skewness > -0.5 and skewness < 0.5:
             print("No transformation applied due to low skewness.")
-            return y  # No transformation
+            return y, 'none', None  # No transformation
         else:
             try:
                 print("Applying Box-Cox transformation due to other skewness values.")
-                return boxcox_transform(y)
+                transformed_y, lmbda = boxcox_transform(y)
+                return transformed_y, 'box-cox', lmbda
             except ValueError:
                 print("Applying Yeo-Johnson transformation due to other skewness values and failed Box-Cox transformation.")
-                return yeojohnson_transform(y)
+                transformed_y, lmbda = yeojohnson_transform(y)
+                return transformed_y, 'yeo-johnson', lmbda
+
+def revert_standardization(y_standardized, original_mean, original_std):
+    """
+    Reverts the standardization process by applying the inverse of standardization.
+
+    Parameters:
+    y_standardized (np.ndarray): The standardized target variable.
+    original_mean (float): The mean of the original target variable before standardization.
+    original_std (float): The standard deviation of the original target variable before standardization.
+
+    Returns:
+    np.ndarray: The original target variable before standardization.
+    """
+    return y_standardized * original_std + original_mean
+
+def revert_transformation(y_transformed, transformation_name, original_mean=None, original_std=None, lmbda=None):
+    """
+    Reverts the transformation applied to the target variable based on the transformation name.
+
+    Parameters:
+    y_transformed (np.ndarray): The transformed target variable data.
+    transformation_name (str): The name of the applied transformation.
+    original_mean (float, optional): The mean of the original target variable, required if standardized.
+    original_std (float, optional): The standard deviation of the original target variable, required if standardized.
+    lmbda (float, optional): The lambda value used for the Box-Cox or Yeo-Johnson transformation, if applicable.
+
+    Returns:
+    np.ndarray: The reverted target variable, in its original form.
+
+    Raises:
+    ValueError: If the transformation name is not recognized.
+    """
+
+    if transformation_name == 'log':
+        return expm1(y_transformed)
+    elif transformation_name == 'sqrt':
+        return square(y_transformed)
+    elif transformation_name == 'square':
+        return sqrt(y_transformed)
+    elif transformation_name == 'box-cox':
+        if lmbda is None:
+            raise ValueError("Lambda value is required to revert Box-Cox transformation.")
+        return inv_boxcox(y_transformed, lmbda)
+    elif transformation_name == 'yeo-johnson':
+        if lmbda is None:
+            raise ValueError("Lambda value is required to revert Yeo-Johnson transformation.")
+        return yeojohnson_inverse(y_transformed, lmbda)
+    elif transformation_name == 'none':
+        return y_transformed
+    else:
+        raise ValueError(f"Unrecognized transformation name: {transformation_name}")
+
+def yeojohnson_inverse(y_transformed, lmbda):
+    """
+    Reverts the Yeo-Johnson transformation given the transformed data and lambda parameter.
+
+    Parameters:
+    y_transformed (np.ndarray): The Yeo-Johnson transformed data.
+    lmbda (float): The lambda value used in the Yeo-Johnson transformation.
+
+    Returns:
+    np.ndarray: The original data before Yeo-Johnson transformation.
+    """
+    if lmbda == 0:
+        return expm1(y_transformed)
+    elif lmbda > 0:
+        return np.exp(np.log1p(y_transformed * lmbda) / lmbda) - 1
+    else:
+        return -np.exp(np.log1p(-y_transformed * lmbda) / -lmbda) + 1
+
 
 def filter_columns_by_year(gdf: pd.DataFrame, year: int) -> pd.DataFrame:
     """
@@ -541,4 +644,150 @@ def raster_freq_table(raster_path):
     
     return frequency_table
 
+def df_to_pdf(df, file_path, title='.', show=False):
+    fig, ax = plt.subplots(figsize=(8, 4))  # Set the size of the figure
+    ax.axis('tight')
+    ax.axis('off')
+    table = ax.table(cellText=df.values, colLabels=df.columns, cellLoc='center', loc='center')
+    
+    # Save the plot as a PDF
+    plt.savefig(file_path)
+
+    if title!='.': 
+        ax.set_title(title)
+
+    if show == True: 
+        plt.show()
+
+
+def estimate_reasonable_beta(coordinates, values, plot_variogram=False):
+    """
+    Estimate a reasonable beta for the HalfCauchy prior based on the variogram of the target variable.
+    
+    Parameters:
+    - coordinates: List of (x, y) tuples representing the spatial coordinates.
+    - values: List or array of target variable values corresponding to the coordinates.
+    - plot_variogram: Whether to plot the variogram for visual inspection (default is False).
+    
+    Returns:
+    - beta: A reasonable beta for the HalfCauchy prior for length scale (ls).
+    """
+    # Step 1: Calculate pairwise distances
+    distances = pdist(coordinates, metric='euclidean')
+    
+    # Get summary statistics for distances
+    min_distance = np.min(distances)
+    max_distance = np.max(distances)
+    mean_distance = np.mean(distances)
+    
+    print(f"Min distance: {min_distance}")
+    print(f"Max distance: {max_distance}")
+    print(f"Mean distance: {mean_distance}")
+    
+    # Step 2: Create and analyze variogram
+    variogram = Variogram(coordinates, values, normalize=False)
+    
+    # Plot the variogram if required
+    if plot_variogram:
+        variogram.plot()
+        plt.title("Variogram of Target Variable")
+        plt.xlabel("Distance")
+        plt.ylabel("Semi-variance")
+        plt.show()
+
+    # Step 3: Determine the range where the variogram levels off (effective range)
+    range_estimate = variogram.parameters[0]  # The 'range' from the variogram model
+    
+    print(f"Estimated range from variogram: {range_estimate}")
+    
+    # Step 4: Determine a reasonable beta for HalfCauchy prior based on the range
+    # Use thresholds based on the proportion of the maximum distance
+    if range_estimate < 0.1 * max_distance:
+        beta = 0.5  # Short-range correlation
+        print("Short-range correlation detected. Setting beta to 0.5.")
+    elif range_estimate < 0.5 * max_distance:
+        beta = 1.0  # Moderate correlation
+        print("Moderate-range correlation detected. Setting beta to 1.0.")
+    else:
+        beta = 2.0  # Long-range correlation
+        print("Long-range correlation detected. Setting beta to 2.0.")
+    
+    return beta
+
+
+def auto_transform(df):
+    """
+    Automatically identify and apply the necessary transformations to the DataFrame.
+
+    Parameters:
+    df (pd.DataFrame): The input DataFrame with covariates.
+
+    Returns:
+    pd.DataFrame: A new DataFrame with transformations applied.
+    """
+
+    def identify_transformation(df):
+        """
+        Identify the type of transformation needed for each column.
+
+        Parameters:
+        df (pd.DataFrame): The input DataFrame.
+
+        Returns:
+        log_columns, binary_columns, other_columns (lists): Columns to log transform, binary columns, and columns needing Yeo-Johnson transform.
+        """
+        log_columns = []
+        binary_columns = []
+        other_columns = []
+        
+        # Loop through each column and identify the needed transformation
+        for col in df.columns:
+            unique_values = df[col].nunique()
+            if unique_values == 2:  # Binary column (e.g., 0 and 1)
+                binary_columns.append(col)
+            elif (df[col] > 0).all():  # Log transformable (strictly positive values)
+                log_columns.append(col)
+            else:  # Apply Yeo-Johnson to handle negative or skewed values
+                other_columns.append(col)
+        
+        return log_columns, binary_columns, other_columns
+
+    def build_preprocessor(df):
+        """
+        Build a ColumnTransformer based on the identified transformations for each column.
+
+        Parameters:
+        df (pd.DataFrame): The input DataFrame.
+
+        Returns:
+        ColumnTransformer: A preprocessor object that applies transformations.
+        """
+        log_columns, binary_columns, other_columns = identify_transformation(df)
+        
+        # Define the necessary transformers
+        log_transform = FunctionTransformer(np.log1p, validate=True)  # Log transformation
+        binary_transform = 'passthrough'  # No transformation for binary columns
+        yeo_johnson_transform = PowerTransformer(method='yeo-johnson')  # Yeo-Johnson transformation
+
+        # Build the preprocessor
+        preprocessor = ColumnTransformer(
+            transformers=[
+                ('log', log_transform, log_columns),
+                ('binary', binary_transform, binary_columns),
+                ('yeo_johnson', yeo_johnson_transform, other_columns)
+            ]
+        )
+        
+        return preprocessor
+
+    # Build the preprocessor for the input DataFrame
+    preprocessor = build_preprocessor(df)
+
+    # Fit and transform the DataFrame
+    transformed_data = preprocessor.fit_transform(df)
+
+    # Convert the transformed data back into a DataFrame
+    transformed_df = pd.DataFrame(transformed_data, columns=df.columns)
+
+    return transformed_df
 
