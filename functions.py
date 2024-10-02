@@ -28,6 +28,12 @@ from matplotlib import pyplot as plt
 import seaborn as sns
 import re
 
+from scipy.spatial.distance import pdist, squareform
+from skgstat import Variogram
+
+from sklearn.preprocessing import FunctionTransformer, PowerTransformer
+from sklearn.compose import ColumnTransformer
+
 def resample_raster(input_path, output_path, scale, resampling_method=Resampling.bilinear):
     """
     Resample a raster dataset to a different resolution.
@@ -653,4 +659,135 @@ def df_to_pdf(df, file_path, title='.', show=False):
     if show == True: 
         plt.show()
 
+
+def estimate_reasonable_beta(coordinates, values, plot_variogram=False):
+    """
+    Estimate a reasonable beta for the HalfCauchy prior based on the variogram of the target variable.
+    
+    Parameters:
+    - coordinates: List of (x, y) tuples representing the spatial coordinates.
+    - values: List or array of target variable values corresponding to the coordinates.
+    - plot_variogram: Whether to plot the variogram for visual inspection (default is False).
+    
+    Returns:
+    - beta: A reasonable beta for the HalfCauchy prior for length scale (ls).
+    """
+    # Step 1: Calculate pairwise distances
+    distances = pdist(coordinates, metric='euclidean')
+    
+    # Get summary statistics for distances
+    min_distance = np.min(distances)
+    max_distance = np.max(distances)
+    mean_distance = np.mean(distances)
+    
+    print(f"Min distance: {min_distance}")
+    print(f"Max distance: {max_distance}")
+    print(f"Mean distance: {mean_distance}")
+    
+    # Step 2: Create and analyze variogram
+    variogram = Variogram(coordinates, values, normalize=False)
+    
+    # Plot the variogram if required
+    if plot_variogram:
+        variogram.plot()
+        plt.title("Variogram of Target Variable")
+        plt.xlabel("Distance")
+        plt.ylabel("Semi-variance")
+        plt.show()
+
+    # Step 3: Determine the range where the variogram levels off (effective range)
+    range_estimate = variogram.parameters[0]  # The 'range' from the variogram model
+    
+    print(f"Estimated range from variogram: {range_estimate}")
+    
+    # Step 4: Determine a reasonable beta for HalfCauchy prior based on the range
+    # Use thresholds based on the proportion of the maximum distance
+    if range_estimate < 0.1 * max_distance:
+        beta = 0.5  # Short-range correlation
+        print("Short-range correlation detected. Setting beta to 0.5.")
+    elif range_estimate < 0.5 * max_distance:
+        beta = 1.0  # Moderate correlation
+        print("Moderate-range correlation detected. Setting beta to 1.0.")
+    else:
+        beta = 2.0  # Long-range correlation
+        print("Long-range correlation detected. Setting beta to 2.0.")
+    
+    return beta
+
+
+def auto_transform(df):
+    """
+    Automatically identify and apply the necessary transformations to the DataFrame.
+
+    Parameters:
+    df (pd.DataFrame): The input DataFrame with covariates.
+
+    Returns:
+    pd.DataFrame: A new DataFrame with transformations applied.
+    """
+
+    def identify_transformation(df):
+        """
+        Identify the type of transformation needed for each column.
+
+        Parameters:
+        df (pd.DataFrame): The input DataFrame.
+
+        Returns:
+        log_columns, binary_columns, other_columns (lists): Columns to log transform, binary columns, and columns needing Yeo-Johnson transform.
+        """
+        log_columns = []
+        binary_columns = []
+        other_columns = []
+        
+        # Loop through each column and identify the needed transformation
+        for col in df.columns:
+            unique_values = df[col].nunique()
+            if unique_values == 2:  # Binary column (e.g., 0 and 1)
+                binary_columns.append(col)
+            elif (df[col] > 0).all():  # Log transformable (strictly positive values)
+                log_columns.append(col)
+            else:  # Apply Yeo-Johnson to handle negative or skewed values
+                other_columns.append(col)
+        
+        return log_columns, binary_columns, other_columns
+
+    def build_preprocessor(df):
+        """
+        Build a ColumnTransformer based on the identified transformations for each column.
+
+        Parameters:
+        df (pd.DataFrame): The input DataFrame.
+
+        Returns:
+        ColumnTransformer: A preprocessor object that applies transformations.
+        """
+        log_columns, binary_columns, other_columns = identify_transformation(df)
+        
+        # Define the necessary transformers
+        log_transform = FunctionTransformer(np.log1p, validate=True)  # Log transformation
+        binary_transform = 'passthrough'  # No transformation for binary columns
+        yeo_johnson_transform = PowerTransformer(method='yeo-johnson')  # Yeo-Johnson transformation
+
+        # Build the preprocessor
+        preprocessor = ColumnTransformer(
+            transformers=[
+                ('log', log_transform, log_columns),
+                ('binary', binary_transform, binary_columns),
+                ('yeo_johnson', yeo_johnson_transform, other_columns)
+            ]
+        )
+        
+        return preprocessor
+
+    # Build the preprocessor for the input DataFrame
+    preprocessor = build_preprocessor(df)
+
+    # Fit and transform the DataFrame
+    transformed_data = preprocessor.fit_transform(df)
+
+    # Convert the transformed data back into a DataFrame
+    transformed_df = pd.DataFrame(transformed_data, columns=df.columns)
+
+    return transformed_df
 
