@@ -34,6 +34,10 @@ from skgstat import Variogram
 from sklearn.preprocessing import FunctionTransformer, PowerTransformer
 from sklearn.compose import ColumnTransformer
 
+import os
+import shutil
+from PyPDF2 import PdfMerger
+
 def resample_raster(input_path, output_path, scale, resampling_method=Resampling.bilinear):
     """
     Resample a raster dataset to a different resolution.
@@ -645,19 +649,35 @@ def raster_freq_table(raster_path):
     return frequency_table
 
 def df_to_pdf(df, file_path, title='.', show=False):
+    """
+    Converts a DataFrame to a PDF with an optional title.
+
+    Parameters:
+    df (pandas.DataFrame): The DataFrame to convert to PDF.
+    file_path (str): The path to save the PDF.
+    title (str): The title of the PDF (default is '.').
+    show (bool): Whether to display the PDF after saving (default is False).
+    """
     fig, ax = plt.subplots(figsize=(8, 4))  # Set the size of the figure
     ax.axis('tight')
     ax.axis('off')
+
+    # Set the title before saving
+    if title != '.':
+        ax.set_title(title, fontsize=14, pad=20)
+
+    # Create the table from the DataFrame
     table = ax.table(cellText=df.values, colLabels=df.columns, cellLoc='center', loc='center')
-    
+
     # Save the plot as a PDF
-    plt.savefig(file_path)
+    plt.savefig(file_path, bbox_inches='tight')
 
-    if title!='.': 
-        ax.set_title(title)
-
-    if show == True: 
+    # Optionally show the plot
+    if show:
         plt.show()
+
+    # Close the plot to free up resources
+    plt.close()
 
 
 def estimate_reasonable_beta(coordinates, values, plot_variogram=False):
@@ -790,4 +810,64 @@ def auto_transform(df):
     transformed_df = pd.DataFrame(transformed_data, columns=df.columns)
 
     return transformed_df
+
+
+def sort_key(filename):
+    """
+    Extracts leading numerical parts from the filename for sorting numerically,
+    and then alphabetically for any non-numerical parts.
+    """
+    # Use a regular expression to split the filename into numeric and non-numeric parts
+    parts = re.split(r'(\d+)', filename)
+    # Convert numeric parts to integers for proper numeric sorting
+    return [int(part) if part.isdigit() else part.lower() for part in parts]
+
+def create_pdf_report(destination, source):
+    """
+    Manages PDF files by performing the following actions:
+    
+    1. Creates a directory at the specified destination path if it doesn't exist.
+    2. Copies all .pdf files from the source directory to the destination directory.
+    3. Deletes all files in the source directory.
+    4. Merges all .pdf files from the destination directory into a single PDF file named 'Report.pdf',
+       ensuring the files are sorted numerically first and alphabetically second.
+
+    Parameters:
+    destination (str): The path where the new directory is created and PDFs are copied to.
+    source (str): The path from where PDFs are copied and all files are erased.
+
+    Example:
+    manage_pdfs('/path/to/destination', '/path/to/source')
+    """
+    # Step 1: Create a directory at destination
+    if not os.path.exists(destination):
+        os.makedirs(destination)
+    
+    # Step 2: Copy all .pdf files from source to destination
+    for filename in os.listdir(source):
+        if filename.endswith('.pdf'):
+            shutil.copy(os.path.join(source, filename), os.path.join(destination, filename))
+    
+    # Step 3: Erase all files from source
+    for filename in os.listdir(source):
+        file_path = os.path.join(source, filename)
+        if os.path.isfile(file_path):
+            os.remove(file_path)
+    
+    # Step 4: Combine all files from destination into a single PDF called Report.pdf
+    merger = PdfMerger()
+
+    # Get a list of .pdf files and sort them numerically then alphabetically
+    pdf_files = sorted([f for f in os.listdir(destination) if f.endswith('.pdf')], key=sort_key)
+
+    for filename in pdf_files:
+        merger.append(os.path.join(destination, filename))
+    
+    output_path = os.path.join(destination, 'Report.pdf')
+    merger.write(output_path)
+    merger.close()
+
+
+
+
 

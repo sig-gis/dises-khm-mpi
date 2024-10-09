@@ -5,6 +5,7 @@ layers_data/
 .ipynb_checkpoints/
 venv/
 .env/
+compared_reports/
 *.log
 *.sqlite3
 *.csv
