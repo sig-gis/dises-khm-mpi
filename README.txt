@@ -18,6 +18,7 @@ The process of adding GIS layers is handled in the global-layers-integration fol
 
 - Notebook 1 downloads all the layers necessary to build a covariate matrix 
 - Notebook 2 integrates more covariates into a single shape file
+- Various .py files are need and included in the folder
 
 functions.py file contains functions used throughout
 
