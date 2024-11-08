@@ -395,119 +395,89 @@ def plot_histograms(df, bins=50):
     plt.tight_layout()
     plt.show()
 
-def log_transform(y):
-    return np.log1p(y)
+def log_transform(df):
+    return pd.DataFrame(np.log1p(df.iloc[:, 0]), columns=df.columns)
 
-def sqrt_transform(y):
-    return np.sqrt(y)
+def sqrt_transform(df):
+    return pd.DataFrame(np.sqrt(df.iloc[:, 0]), columns=df.columns)
 
-def square_transform(y):
-    return np.square(y)
+def square_transform(df):
+    return pd.DataFrame(np.square(df.iloc[:, 0]), columns=df.columns)
 
-def boxcox_transform(y):
-    transformed_y, lmbda = boxcox(y)
-    return transformed_y, lmbda
+def boxcox_transform(df):
+    transformed_y, lmbda = boxcox(df.iloc[:, 0])
+    return pd.DataFrame(transformed_y, columns=df.columns), lmbda
 
-def yeojohnson_transform(y):
-    transformed_y, lmbda = yeojohnson(y)
-    return transformed_y, lmbda
-
-def select_transformation(y):
+def select_transformation(df, zero_threshold=0.1, shift_value=0.01):
     """
     Selects the best transformation for the target variable based on its distribution characteristics,
-    including skewness and the presence of negative values or zeros.
-
-    The function considers the following transformations:
-    - Logarithmic (log1p)
-    - Square root
-    - Square
-    - Box-Cox (requires positive values)
-    - Yeo-Johnson (can handle negative values and zeros)
+    including skewness, kurtosis, and the presence of excessive zeros.
 
     Parameters:
-    y (pd.Series or np.ndarray): The target variable data.
+    df (pd.DataFrame): The target variable data with a single column.
+    zero_threshold (float): Proportion of zeros above which a shift will be applied.
+    shift_value (float): The constant added to each value if there are too many zeros.
 
     Returns:
-    tuple: (transformed_y, transformation_name, lmbda)
-           - transformed_y (np.ndarray): The transformed target variable.
+    tuple: (transformed_df, transformation_name, lmbda)
+           - transformed_df (pd.DataFrame): The transformed target variable with the original column name.
            - transformation_name (str): The name of the applied transformation.
-           - lmbda (float or None): The lambda value used for Box-Cox or Yeo-Johnson transformations. 
+           - lmbda (float or None): The lambda value used for Box-Cox transformation.
                                     None if the transformation does not require lambda.
-
-    Notes:
-    - If the target variable contains non-positive values, log and Box-Cox transformations are avoided.
-    - The function prints the skewness and kurtosis of the original target variable.
-    - Transformation selection is based on skewness:
-        - Skewness > 1: Log transformation (if possible) or Yeo-Johnson
-        - 0.5 < Skewness <= 1: Square root transformation
-        - Skewness < -1: Square transformation
-        - -0.5 < Skewness < 0.5: No transformation
-        - Other cases: Box-Cox (if possible) or Yeo-Johnson
-
-    Example:
-    y = pd.Series([1, 2, 3, 4, 5])
-    transformed_y, transformation_name, lmbda = select_transformation(y)
     """
+    y = df.iloc[:, 0]
     skewness = skew(y)
     kurt = kurtosis(y)
     print(f"Skewness: {skewness}, Kurtosis: {kurt}")
+    
+    # Check proportion of zeros
+    zero_proportion = (y == 0).mean()
+    if zero_proportion > zero_threshold:
+        print(f"High proportion of zeros detected ({zero_proportion:.2%}). Applying a shift of {shift_value}.")
+        y = y + shift_value  # Shift values to reduce zero inflation
+    
+    # Recreate the DataFrame after potential shift
+    df = pd.DataFrame(y, columns=df.columns)
 
     if np.any(y <= 0):
         # If there are non-positive values, avoid log and Box-Cox transformations
         if skewness > 1:
-            print("Applying Yeo-Johnson transformation due to high positive skewness and non-positive values.")
-            transformed_y, lmbda = yeojohnson_transform(y)
-            return transformed_y, 'yeo-johnson', lmbda
+            print("Applying square root transformation due to high positive skewness and non-positive values.")
+            return sqrt_transform(df), 'sqrt', None
         elif skewness > 0.5:
             print("Applying square root transformation due to moderate positive skewness and non-positive values.")
-            return sqrt_transform(y), 'sqrt', None
+            return sqrt_transform(df), 'sqrt', None
         elif skewness < -1:
             print("Applying square transformation due to high negative skewness and non-positive values.")
-            return square_transform(y), 'square', None
-        elif skewness > -0.5 and skewness < 0.5:
+            return square_transform(df), 'square', None
+        elif -0.5 < skewness < 0.5:
             print("No transformation applied due to low skewness and non-positive values.")
-            return y, 'none', None  # No transformation
+            return df, 'none', None  # No transformation
         else:
-            print("Applying Yeo-Johnson transformation due to other skewness values and non-positive values.")
-            transformed_y, lmbda = yeojohnson_transform(y)
-            return transformed_y, 'yeo-johnson', lmbda
+            print("Applying square root transformation due to other skewness values and non-positive values.")
+            return sqrt_transform(df), 'sqrt', None
     else:
         # If all values are positive, consider all transformations
         if skewness > 1:
             print("Applying log transformation due to high positive skewness.")
-            return log_transform(y), 'log', None
+            return log_transform(df), 'log', None
         elif skewness > 0.5:
             print("Applying square root transformation due to moderate positive skewness.")
-            return sqrt_transform(y), 'sqrt', None
+            return sqrt_transform(df), 'sqrt', None
         elif skewness < -1:
             print("Applying square transformation due to high negative skewness.")
-            return square_transform(y), 'square', None
-        elif skewness > -0.5 and skewness < 0.5:
+            return square_transform(df), 'square', None
+        elif -0.5 < skewness < 0.5:
             print("No transformation applied due to low skewness.")
-            return y, 'none', None  # No transformation
+            return df, 'none', None  # No transformation
         else:
             try:
                 print("Applying Box-Cox transformation due to other skewness values.")
-                transformed_y, lmbda = boxcox_transform(y)
-                return transformed_y, 'box-cox', lmbda
+                transformed_df, lmbda = boxcox_transform(df)
+                return transformed_df, 'box-cox', lmbda
             except ValueError:
-                print("Applying Yeo-Johnson transformation due to other skewness values and failed Box-Cox transformation.")
-                transformed_y, lmbda = yeojohnson_transform(y)
-                return transformed_y, 'yeo-johnson', lmbda
-
-def revert_standardization(y_standardized, original_mean, original_std):
-    """
-    Reverts the standardization process by applying the inverse of standardization.
-
-    Parameters:
-    y_standardized (np.ndarray): The standardized target variable.
-    original_mean (float): The mean of the original target variable before standardization.
-    original_std (float): The standard deviation of the original target variable before standardization.
-
-    Returns:
-    np.ndarray: The original target variable before standardization.
-    """
-    return y_standardized * original_std + original_mean
+                print("Box-Cox transformation failed; no transformation applied.")
+                return df, 'none', None
 
 def revert_transformation(y_transformed, transformation_name, original_mean=None, original_std=None, lmbda=None):
     """
@@ -545,6 +515,20 @@ def revert_transformation(y_transformed, transformation_name, original_mean=None
         return y_transformed
     else:
         raise ValueError(f"Unrecognized transformation name: {transformation_name}")
+
+def revert_standardization(y_standardized, original_mean, original_std):
+    """
+    Reverts the standardization process by applying the inverse of standardization.
+
+    Parameters:
+    y_standardized (np.ndarray): The standardized target variable.
+    original_mean (float): The mean of the original target variable before standardization.
+    original_std (float): The standard deviation of the original target variable before standardization.
+
+    Returns:
+    np.ndarray: The original target variable before standardization.
+    """
+    return y_standardized * original_std + original_mean
 
 def yeojohnson_inverse(y_transformed, lmbda):
     """
@@ -822,7 +806,7 @@ def sort_key(filename):
     # Convert numeric parts to integers for proper numeric sorting
     return [int(part) if part.isdigit() else part.lower() for part in parts]
 
-def create_pdf_report(destination, source):
+def create_pdf_report(destination, source, report_name):
     """
     Manages PDF files by performing the following actions:
     
@@ -835,6 +819,7 @@ def create_pdf_report(destination, source):
     Parameters:
     destination (str): The path where the new directory is created and PDFs are copied to.
     source (str): The path from where PDFs are copied and all files are erased.
+    report_name (str): name of the final PDF file.
 
     Example:
     manage_pdfs('/path/to/destination', '/path/to/source')
@@ -854,7 +839,7 @@ def create_pdf_report(destination, source):
         if os.path.isfile(file_path):
             os.remove(file_path)
     
-    # Step 4: Combine all files from destination into a single PDF called Report.pdf
+    # Step 4: Combine all files from destination into a single PDF
     merger = PdfMerger()
 
     # Get a list of .pdf files and sort them numerically then alphabetically
@@ -863,7 +848,7 @@ def create_pdf_report(destination, source):
     for filename in pdf_files:
         merger.append(os.path.join(destination, filename))
     
-    output_path = os.path.join(destination, 'Report.pdf')
+    output_path = os.path.join(destination, report_name)
     merger.write(output_path)
     merger.close()
 

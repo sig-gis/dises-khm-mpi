@@ -6,6 +6,7 @@ layers_data/
 venv/
 .env/
 compared_reports/
+predictions/
 *.log
 *.sqlite3
 *.csv
