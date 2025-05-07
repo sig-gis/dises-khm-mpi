@@ -11,7 +11,7 @@ from scipy.spatial import cKDTree
 
 import rasterio
 from rasterio.enums import Resampling
-from rasterio import mask
+from rasterio.mask import mask as rio_mask
 
 import os
 import rasterio
@@ -173,7 +173,7 @@ def raster_to_gdf(raster_path):
 
 def raster_clipping(shape_path, raster_path, file_name):
     """
-    Clipping a raster image to the shape of a given shapefile and ensuring CRS compatibility.
+    Clip a raster image using a shapefile and ensure CRS compatibility.
     """
     # Load the shapefile using GeoPandas to easily handle CRS
     gdf = gpd.read_file(shape_path)
@@ -185,27 +185,31 @@ def raster_clipping(shape_path, raster_path, file_name):
             print(f"Reprojecting shapefile from {gdf.crs} to {raster_crs}")
             gdf = gdf.to_crs(raster_crs)
 
-        # Extract shapes from the GeoDataFrame for masking
-        shapes = [feature["geometry"] for _, feature in gdf.iterrows()]
+        # Extract shapes from the GeoDataFrame for masking (convert to GeoJSON format)
+        shapes = [mapping(geometry) for geometry in gdf.geometry]
 
         # Perform the masking operation
-        out_image, out_transform = mask.mask(src, shapes, crop=True)
+        out_image, out_transform = rio_mask(src, shapes=shapes, crop=True)  # <- Use renamed mask
         out_meta = src.meta
 
-    # Update metadata for the output file
-    out_meta.update({"driver": "GTiff",
-                     "height": out_image.shape[1],
-                     "width": out_image.shape[2],
-                     "transform": out_transform})
+        # Update metadata for the output file
+        out_meta.update({
+            "driver": "GTiff",
+            "height": out_image.shape[1],
+            "width": out_image.shape[2],
+            "transform": out_transform
+        })
 
     # Define the path for the cropped raster
     cropped_raster_path = file_name
+
     # Write the cropped raster to file
     with rasterio.open(cropped_raster_path, "w", **out_meta) as dest:
         dest.write(out_image)
 
-    #print(f"Cropped raster saved to: {cropped_raster_path}")
+    print(f"Cropped raster saved to: {cropped_raster_path}")
     return cropped_raster_path
+
 
 
 def inverted_clip_touching_gdf(gdf_to_clip, gdf_mask):
@@ -852,7 +856,306 @@ def create_pdf_report(destination, source, report_name):
     merger.write(output_path)
     merger.close()
 
+import rasterio
+from rasterio.mask import mask
+import geopandas as gpd
+import os
 
+def clip_raster_exclude_shape(raster_path, shapefile_path, output_path):
+    """
+    Clips a raster file using a shapefile and keeps the pixels on the raster that do not overlap with the shape.
+
+    Parameters:
+        raster_path (str): Path to the input raster file.
+        shapefile_path (str): Path to the shapefile used for clipping.
+        output_path (str): Path to save the output clipped raster file.
+
+    Returns:
+        None
+
+    Raises:
+        ValueError: If the CRS of the raster and shapefile do not match and cannot be reprojected.
+    """
+    # Read the shapefile
+    shapefile = gpd.read_file(shapefile_path)
+
+    # Ensure the shapefile and raster have the same CRS
+    with rasterio.open(raster_path) as src:
+        raster_crs = src.crs
+
+        if shapefile.crs != raster_crs:
+            try:
+                shapefile = shapefile.to_crs(raster_crs)
+            except Exception as e:
+                raise ValueError(f"Failed to reproject shapefile to raster CRS: {e}")
+
+        # Convert shapefile geometries to a list of GeoJSON-like objects
+        shapes = [geometry for geometry in shapefile.geometry]
+
+        try:
+            # Create an inverted mask
+            out_image, out_transform = mask(src, shapes=shapes, invert=True, crop=False)
+
+            # Update metadata
+            out_meta = src.meta.copy()
+            out_meta.update({
+                "driver": "GTiff",
+                "height": out_image.shape[1],
+                "width": out_image.shape[2],
+                "transform": src.transform,
+            })
+        except TypeError as te:
+            raise TypeError(f"Error during masking operation: {te}")
+
+    # Save the masked raster to a new file
+    with rasterio.open(output_path, "w", **out_meta) as dest:
+        dest.write(out_image)
+
+import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
+import contextily as ctx
+import rasterio
+from rasterio.mask import mask
+import geopandas as gpd
+import os
+
+def plot_treatment_control_grids(gdf, treatment_column, crs, title='.'):
+    """
+    Plots a map of treatment and control grids with a basemap and legend.
+
+    Parameters:
+        gdf (GeoDataFrame): GeoDataFrame containing the data to plot.
+        treatment_column (str): Name of the column indicating treatment values.
+        crs: Coordinate reference system of the GeoDataFrame.
+    """
+    # Create a color mapping based on the Treatment values
+    color_map = {
+        1: 'blue',    # Treatment areas
+        0: 'red',     # Control areas
+        3: 'white'    # Neither control nor treatment
+    }
+
+    # Map the Treatment values to colors
+    gdf['color'] = gdf[treatment_column].map(color_map)
+
+    # Create a plot
+    fig, ax = plt.subplots(figsize=(10, 10))
+
+    # Plot the grid, using the color column
+    gdf.plot(ax=ax, color=gdf['color'], edgecolor='black', alpha=0.6)
+
+    # Add a black-and-white basemap (Stamen Toner Lite)
+    ctx.add_basemap(ax, source=ctx.providers.CartoDB.Positron, alpha=0.9, crs=crs)
+
+    # Add title and axis labels
+    if title=='.':
+        ax.set_title('Treatment and Control Grids')
+    if title!='.':
+        ax.set_title(title)
+    
+    ax.set_xlabel('Longitude')
+    ax.set_ylabel('Latitude')
+
+    # Add a legend manually
+    treated_patch = mpatches.Patch(color='blue', label='Treated Grids')
+    control_patch = mpatches.Patch(color='red', label='Control Grids')
+    ax.legend(handles=[treated_patch, control_patch], loc='upper right', title='Legend')
+
+    # Show the plot
+    plt.show()
+
+
+def plot_histogram_with_mean(df, column, bins=10, title='.', color='blue', line_color='red', line_style='dotted'):
+    """
+    Plots a histogram of a specified column in a DataFrame and adds a vertical line at the mean.
+    
+    Parameters:
+        df (pd.DataFrame): The DataFrame containing the data.
+        column (str): The column name to plot the histogram for.
+        bins (int): Number of bins for the histogram. Default is 10.
+        color (str): Color of the histogram bars. Default is 'blue'.
+        line_color (str): Color of the mean line. Default is 'red'.
+        line_style (str): Line style for the mean line. Default is 'dotted'.
+    """
+    # Compute the mean
+    mean_value = df[column].mean()
+    
+    # Plot the histogram
+    plt.hist(df[column], bins=bins, alpha=0.7, edgecolor='black', color=color)
+    
+    # Add a vertical line at the mean
+    plt.axvline(mean_value, color=line_color, linestyle=line_style, linewidth=2, label=f'Mean: {mean_value:.2f}')
+    
+    # Add labels and legend
+    plt.xlabel(column.capitalize())
+    plt.ylabel('Frequency')
+    
+    if title=='.': 
+        title = f'histogram of {column}'
+    
+    plt.title(title)
+    plt.legend()
+    
+    # Show the plot
+    plt.show()
+
+def clip_raster_with_shapefile(raster_path, shapefile_path, output_path):
+    """
+    Clips a raster file using a shapefile and saves a new masked raster.
+
+    Parameters:
+        raster_path (str): Path to the input raster file.
+        shapefile_path (str): Path to the shapefile used for clipping.
+        output_path (str): Path to save the output clipped raster file.
+
+    Returns:
+        None
+    """
+    # Read the shapefile
+    shapefile = gpd.read_file(shapefile_path)
+
+    # Ensure the shapefile and raster have the same CRS
+    with rasterio.open(raster_path) as src:
+        raster_crs = src.crs
+
+    if shapefile.crs != raster_crs:
+        shapefile = shapefile.to_crs(raster_crs)
+
+    # Convert shapefile geometries to a list of GeoJSON-like objects
+    shapes = [feature["geometry"] for feature in shapefile.iterfeatures()]
+
+    # Open the raster file
+    with rasterio.open(raster_path) as src:
+        # Mask the raster with the shapes
+        out_image, out_transform = mask(src, shapes, crop=True)
+
+        # Update metadata
+        out_meta = src.meta.copy()
+        out_meta.update({
+            "driver": "GTiff",
+            "height": out_image.shape[1],
+            "width": out_image.shape[2],
+            "transform": out_transform,
+        })
+
+    # Save the clipped raster to a new file
+    with rasterio.open(output_path, "w", **out_meta) as dest:
+        dest.write(out_image)
+
+
+# Example usage
+# clip_raster_with_shapefile(
+#     "input_raster.tif", "clip_shapefile.shp", "output_clipped_raster.tif"
+# )
+
+import rasterio
+from rasterio.mask import mask
+import geopandas as gpd
+import os
+
+def clip_raster_exclude_shape(raster_path, shapefile_path, output_path):
+    """
+    Clips a raster file using a shapefile and keeps the pixels on the raster that do not overlap with the shape.
+
+    Parameters:
+        raster_path (str): Path to the input raster file.
+        shapefile_path (str): Path to the shapefile used for clipping.
+        output_path (str): Path to save the output clipped raster file.
+
+    Returns:
+        None
+
+    Raises:
+        ValueError: If the CRS of the raster and shapefile do not match and cannot be reprojected.
+    """
+    # Read the shapefile
+    shapefile = gpd.read_file(shapefile_path)
+
+    # Ensure the shapefile and raster have the same CRS
+    with rasterio.open(raster_path) as src:
+        raster_crs = src.crs
+
+        if shapefile.crs != raster_crs:
+            try:
+                shapefile = shapefile.to_crs(raster_crs)
+            except Exception as e:
+                raise ValueError(f"Failed to reproject shapefile to raster CRS: {e}")
+
+        # Convert shapefile geometries to a list of GeoJSON-like objects
+        shapes = [geometry for geometry in shapefile.geometry]
+
+        try:
+            # Create an inverted mask
+            out_image, out_transform = mask(src, shapes=shapes, invert=True, crop=False)
+
+            # Update metadata
+            out_meta = src.meta.copy()
+            out_meta.update({
+                "driver": "GTiff",
+                "height": out_image.shape[1],
+                "width": out_image.shape[2],
+                "transform": src.transform,
+            })
+        except TypeError as te:
+            raise TypeError(f"Error during masking operation: {te}")
+
+    # Save the masked raster to a new file
+    with rasterio.open(output_path, "w", **out_meta) as dest:
+        dest.write(out_image)
+
+
+def calculate_average_raster_value(raster_path, shapefile_path):
+    """
+    Calculates the average value of all pixels in a raster file that intersect with a shapefile.
+
+    Parameters:
+        raster_path (str): Path to the input raster file.
+        shapefile_path (str): Path to the shapefile.
+
+    Returns:
+        float: The average value of the intersecting pixels, or None if no pixels intersect.
+
+    Raises:
+        ValueError: If the CRS of the raster and shapefile do not match and cannot be reprojected.
+    """
+    # Read the shapefile
+    shapefile = gpd.read_file(shapefile_path)
+
+    # Ensure the shapefile and raster have the same CRS
+    with rasterio.open(raster_path) as src:
+        raster_crs = src.crs
+
+        if shapefile.crs != raster_crs:
+            try:
+                shapefile = shapefile.to_crs(raster_crs)
+            except Exception as e:
+                raise ValueError(f"Failed to reproject shapefile to raster CRS: {e}")
+
+        # Convert shapefile geometries to a list of GeoJSON-like objects
+        shapes = [geometry for geometry in shapefile.geometry]
+
+        try:
+            # Mask the raster with the shapes
+            out_image, _ = mask(src, shapes=shapes, crop=True)
+
+            # Extract the masked data
+            masked_data = out_image[0]  # Assuming single-band raster
+
+            # Replace nodata values with NaN for proper averaging
+            nodata = src.nodata
+            if nodata is not None:
+                masked_data = np.where(masked_data == nodata, np.nan, masked_data)
+
+            # Calculate the average, ignoring NaN values
+            if np.isnan(masked_data).all():
+                return None
+
+            average_value = np.nanmean(masked_data)
+
+            return average_value
+
+        except Exception as e:
+            raise RuntimeError(f"Error during masking or averaging: {e}")
 
 
 

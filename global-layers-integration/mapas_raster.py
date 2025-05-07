@@ -732,30 +732,39 @@ def cargar_gdf_fronteras(filename):
 ### Estadísticas zonales
 
 #función para sacar estadíscticas zonales
-def get_zonal_stats(gdf_path, raster_path, stat, col_name):
+def get_zonal_stats(gdf_path, raster_path, stat, col_name, band=1):
     """
     Retorna una serie del tamaño del gdf con la estadística requerída.
+
+    Parameters:
+    - gdf_path: str, path to the GeoDataFrame (shapefile or GeoJSON)
+    - raster_path: str, path to the raster file
+    - stat: str, name of the statistic to compute (e.g., 'mean', 'sum')
+    - col_name: str, name for the resulting column
+    - band: int, optional, raster band to use (default is 1)
     """
     
-    # Check if the CRS of the raster and the gdf match
+    # Check CRS match
     with rasterio.open(raster_path) as src:
         raster_crs = src.crs
-    
+
     gdf1 = gpd.read_file(gdf_path)
-    
+
     if gdf1.crs != raster_crs:
         gdf1 = gdf1.to_crs(raster_crs)
         gdf1.to_file(gdf_path)
-    
-    stats = zonal_stats(
-        gdf_path, 
-        raster_path,
-        stats=[stat])
 
-    #Create DF
-    stats = pd.DataFrame.from_dict(stats)
-    stats.columns = [col_name]
-    return stats.round(2)
+    stats = zonal_stats(
+        gdf_path,
+        raster_path,
+        stats=[stat],
+        band=band
+    )
+
+    stats_df = pd.DataFrame.from_dict(stats)
+    stats_df.columns = [col_name]
+    return stats_df.round(2)
+
 
 #Función para agregar una columna con información a un gdf
 def add_column_to_gdf(gdf, s):
