@@ -1,10 +1,15 @@
 To install the conda env: 
 
+Follow the instructions on: https://www.pymc.io/projects/docs/en/stable/installation.html
+
+Or: 
+
 conda create -c conda-forge -n pymc_env "pymc>=5"
 conda activate pymc_env
 conda install geopandas rasterio fiona seaborn scikit-gstat ipywidgets
+pip install openpyxl scikit-gstat
 
-Or follow the instructions on: https://www.pymc.io/projects/docs/en/stable/installation.html
+
 
 Notebooks structure: 
 
