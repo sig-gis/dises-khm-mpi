@@ -1,32 +1,53 @@
 # DISES MPI Predictions Project
 
-This project estimates the Multidimensional Poverty Index (MPI) or Indicators in Cambodia using Small Area Estimation (SAE) and Bayesian geostatistical modeling. The workflow integrates data from the DHS and NIS, performs covariate selection, trains spatial models, and generates prediction surfaces and uncertainty maps.
+This project estimates the Multidimensional Poverty Index (MPI) in Cambodia using Small Area Estimation (SAE) and Bayesian geostatistical modeling. The workflow integrates data from the DHS and NIS, performs covariate selection, trains spatial models, and generates prediction surfaces and uncertainty maps.
 
 ## Main Files and Their Purpose
 
 - **0-DHS-NIS-complete.ipynb**  
-  Prepares and harmonizes the NIS and DHS datasets. Loads raw data, merges with geographic information, and exports shapefiles for further analysis.
+  Prepares and harmonizes the NIS and DHS datasets.  
+  - Loads raw NIS and DHS data.
+  - Merges with geographic information (village and cluster shapefiles).
+  - Filters and cleans data (e.g., removes clusters with near-zero coordinates, keeps only rural clusters).
+  - Exports harmonized shapefiles for further analysis.
 
 - **1. data-download.ipynb**  
-  Downloads required data from Google Drive using the Google Drive API. Handles authentication and recursive folder/file downloads.
+  Downloads required data from Google Drive using the Google Drive API.
+  - Handles authentication and recursive folder/file downloads.
+  - Ensures all necessary raw data is available locally.
 
 - **2. Covariates Selection.ipynb**  
-  Performs covariate selection for the MPI model. Cleans and transforms geospatial data, applies Lasso regression for feature selection, and saves the processed dataset and report for modeling.
+  Performs covariate selection for the MPI model.
+  - Cleans and transforms geospatial data.
+  - Handles missing values with interpolation.
+  - Removes all DHS variables except the target indicator.
+  - Generates and transforms covariates (including pairwise interactions).
+  - Applies Lasso regression for feature selection.
+  - Saves the processed dataset and a report for modeling.
 
 - **3. MBG Model Training.ipynb**  
-  Trains a Bayesian Model-Based Geostatistics (MBG) model using the selected covariates. Handles data transformation, model fitting, posterior predictive checks, residual analysis, and saves model outputs and predictions.
+  Trains a Bayesian Model-Based Geostatistics (MBG) model using the selected covariates.
+  - Loads selected features and target variable.
+  - Transforms and standardizes data.
+  - Fits a spatial Bayesian model using PyMC.
+  - Performs posterior predictive checks, residual analysis, and uncertainty quantification.
+  - Saves model outputs and predictions.
 
 - **4. Final Results.ipynb**  
-  Processes and visualizes the final prediction surfaces and uncertainty maps. Reverts predictions to the original scale, evaluates model precision, and exports results for reporting and sharing.
+  Processes and visualizes the final prediction surfaces and uncertainty maps.
+  - Reverts predictions to the original scale.
+  - Merges predictions with spatial data.
+  - Generates and saves surface and uncertainty maps (with option to overlay country boundaries).
+  - Evaluates model precision on unseen data and exports results for reporting.
 
 - **functions.py**  
-  Contains utility functions used throughout the notebooks, such as data transformation, plotting, interpolation, and PDF export helpers.
+  Contains utility functions used throughout the notebooks, such as:
+  - Data transformation and reversion.
+  - Plotting distributions and missing values.
+  - Interpolation and PDF export helpers.
 
 - **scaler_y.pkl**  
   Stores the fitted scaler object for the target variable, used to revert predictions to the original scale.
-
-- **Comments.txt**  
-  Contains project notes, decisions, and discussion points relevant to the modeling process.
 
 - **README.txt**  
   (This file) Explains the project structure and the purpose of each main file.
@@ -39,11 +60,11 @@ This project estimates the Multidimensional Poverty Index (MPI) or Indicators in
 - **temp_files/**  
   Stores intermediate files, reports, and model outputs generated during the workflow.
 
-- **global-layers-integration/**  
-  Handles the integration of additional GIS layers for covariate construction.
+- **predictions/**  
+  Stores final prediction shapefiles for sharing and reporting.
 
-- **optional_notebooks/**  
-  Contains supplementary or legacy notebooks for reference.
+- **compared_reports/**  
+  Stores precision and comparison reports for different model runs.
 
 ## Workflow Overview
 
@@ -64,8 +85,7 @@ This project estimates the Multidimensional Poverty Index (MPI) or Indicators in
 
 ## Environment Setup
 
-Follow the instructions in the original README or use the following commands:
-
+Recommended conda environment setup:
 ```sh
 conda create -c conda-forge -n pymc_env "pymc>=5"
 conda activate pymc_env
