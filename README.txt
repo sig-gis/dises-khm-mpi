@@ -4,28 +4,16 @@ This project estimates the Multidimensional Poverty Index (MPI) in Cambodia usin
 
 ## Main Files and Their Purpose
 
-- **0-DHS-NIS-complete.ipynb**  
-  Prepares and harmonizes the NIS and DHS datasets.  
-  - Loads raw NIS and DHS data.
-  - Merges with geographic information (village and cluster shapefiles).
-  - Filters and cleans data (e.g., removes clusters with near-zero coordinates, keeps only rural clusters).
-  - Exports harmonized shapefiles for further analysis.
-
-- **1. data-download.ipynb**  
-  Downloads required data from Google Drive using the Google Drive API.
-  - Handles authentication and recursive folder/file downloads.
-  - Ensures all necessary raw data is available locally.
-
-- **2. Covariates Selection.ipynb**  
-  Performs covariate selection for the MPI model.
-  - Cleans and transforms geospatial data.
-  - Handles missing values with interpolation.
+- **1. Covariates Selection.ipynb**  
+  Prepares and selects geospatial covariates for the MPI model.
+  - Loads and cleans georeferenced DHS and NIS data.
+  - Handles missing values using interpolation.
   - Removes all DHS variables except the target indicator.
   - Generates and transforms covariates (including pairwise interactions).
   - Applies Lasso regression for feature selection.
   - Saves the processed dataset and a report for modeling.
 
-- **3. MBG Model Training.ipynb**  
+- **2. MBG Model Training.ipynb**  
   Trains a Bayesian Model-Based Geostatistics (MBG) model using the selected covariates.
   - Loads selected features and target variable.
   - Transforms and standardizes data.
@@ -33,7 +21,7 @@ This project estimates the Multidimensional Poverty Index (MPI) in Cambodia usin
   - Performs posterior predictive checks, residual analysis, and uncertainty quantification.
   - Saves model outputs and predictions.
 
-- **4. Final Results.ipynb**  
+- **3. Final Results.ipynb**  
   Processes and visualizes the final prediction surfaces and uncertainty maps.
   - Reverts predictions to the original scale.
   - Merges predictions with spatial data.
@@ -68,20 +56,14 @@ This project estimates the Multidimensional Poverty Index (MPI) in Cambodia usin
 
 ## Workflow Overview
 
-1. **Download Data:**  
-   Use `1. data-download.ipynb` to fetch all required datasets from Google Drive.
+1. **Covariate Selection:**  
+   Use `1. Covariates Selection.ipynb` to select and transform relevant covariates.
 
-2. **Data Preparation:**  
-   Run `0-DHS-NIS-complete.ipynb` to harmonize and export the NIS and DHS datasets.
+2. **Model Training:**  
+   Train the Bayesian geostatistical model in `2. MBG Model Training.ipynb`.
 
-3. **Covariate Selection:**  
-   Use `2. Covariates Selection.ipynb` to select and transform relevant covariates.
-
-4. **Model Training:**  
-   Train the Bayesian geostatistical model in `3. MBG Model Training.ipynb`.
-
-5. **Results and Visualization:**  
-   Generate final prediction maps and reports with `4. Final Results.ipynb`.
+3. **Results and Visualization:**  
+   Generate final prediction maps and reports with `3. Final Results.ipynb`.
 
 ## Environment Setup
 
@@ -97,4 +79,4 @@ For more details, see the [PyMC installation guide](https://www.pymc.io/projects
 
 ---
 
-For questions about specific functions, see
+For questions about specific functions, see `functions.py`.
