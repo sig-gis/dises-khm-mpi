@@ -16,3 +16,5 @@ new-workspace.jupyterlab-workspace
 client_secrets.json
 model.pkl
 scaler_y.pkl
+model_trace.nc
+model_trace.nc
