@@ -71,7 +71,7 @@ Recommended conda environment setup:
 ```sh
 conda create -c conda-forge -n pymc_env "pymc>=5"
 conda activate pymc_env
-conda install geopandas rasterio fiona seaborn scikit-gstat ipywidgets
+conda install geopandas rasterio fiona seaborn ipywidgets
 pip install openpyxl scikit-gstat
 ```
 
