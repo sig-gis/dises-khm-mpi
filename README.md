@@ -42,8 +42,8 @@ This project estimates the Multidimensional Poverty Index (MPI) in Cambodia usin
 
 ## Data and Output Folders
 
-- **data/**  
-  Contains raw and processed data files.
+- **full_panel_merged/**  
+  Contains input processed data files.
 
 - **temp_files/**  
   Stores intermediate files, reports, and model outputs generated during the workflow.
@@ -67,13 +67,17 @@ This project estimates the Multidimensional Poverty Index (MPI) in Cambodia usin
 
 ## Environment Setup
 
-Recommended conda environment setup:
+Create new environment by using the [environment.yml file](environment.yml):
 ```sh
-conda create -c conda-forge -n pymc_env "pymc>=5"
-conda activate pymc_env
-conda install geopandas rasterio fiona seaborn ipywidgets
-pip install openpyxl scikit-gstat
+conda env create --file environment.yml
 ```
+The new environment will be called "dises". Activate environment using:
+```sh
+conda activate dises
+```
+
+** Do not create the environment "dises" if it was already created for running scripts from the [DISES SAE repo](https://github.com/sig-gis/dises-sae/tree/adjusted).
+
 
 For more details, see the [PyMC installation guide](https://www.pymc.io/projects/docs/en/stable/installation.html).
 
